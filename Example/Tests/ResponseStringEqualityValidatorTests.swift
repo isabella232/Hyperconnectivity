@@ -8,24 +8,36 @@
 
 import Foundation
 import OHHTTPStubs
+#if canImport(OHHTTPStubsSwift)
+import OHHTTPStubsSwift
+#endif
 import XCTest
 @testable import Hyperconnectivity
 
 class ResponseStringEqualityValidatorTests: XCTestCase {
     private let timeout: TimeInterval = 5.0
-
+    
     override func tearDown() {
         super.tearDown()
         HTTPStubs.removeAllStubs()
     }
-
+    
     private func stubHost(_ host: String, withHTMLFrom fileName: String) throws {
-        let stubPath = try XCTUnwrap(OHPathForFile(fileName, type(of: self)))
+#if SWIFT_PACKAGE
+        let bundle = Bundle.module
+#else
+        let bundle = Bundle(for: type(of: self))
+#endif
+        let fileURL = bundle.url(
+            forResource: (fileName as NSString).deletingPathExtension,
+            withExtension: (fileName as NSString).pathExtension
+        )
+        let stubPath = try XCTUnwrap(fileURL?.relativePath)
         stub(condition: isHost(host)) { _ in
             return fixture(filePath: stubPath, headers: ["Content-Type": "text/html"])
         }
     }
-
+    
     /// Test response is valid when the response string is equal to the expected response.
     func testEqualsExpectedResponseString() throws {
         try stubHost("www.apple.com", withHTMLFrom: "string-equality-response.html")
@@ -33,7 +45,7 @@ class ResponseStringEqualityValidatorTests: XCTestCase {
         let config = Hyperconnectivity.Configuration(responseValidator: ResponseStringEqualityValidator(expectedResponse: "Success"))
         let connectivity = Hyperconnectivity(configuration: config)
         let connectivityChanged: (ConnectivityResult) -> Void = { result in
-            XCTAssert(result.state == .wifiWithInternet)
+            XCTAssert(result.state == .wifiWithInternet || result.state == .ethernetWithInternet)
             expectation.fulfill()
         }
         connectivity.connectivityChanged = connectivityChanged
@@ -49,7 +61,7 @@ class ResponseStringEqualityValidatorTests: XCTestCase {
         let config = Hyperconnectivity.Configuration(responseValidator: ResponseStringEqualityValidator(expectedResponse: "Success"))
         let connectivity = Hyperconnectivity(configuration: config)
         let connectivityChanged: (ConnectivityResult) -> Void = { result in
-            XCTAssert(result.state == .wifiWithInternet)
+            XCTAssert(result.state == .wifiWithInternet || result.state == .ethernetWithInternet)
             expectation.fulfill()
         }
         connectivity.connectivityChanged = connectivityChanged
@@ -57,7 +69,7 @@ class ResponseStringEqualityValidatorTests: XCTestCase {
         wait(for: [expectation], timeout: timeout)
         connectivity.stopNotifier()
     }
-
+    
     /// Test response is invalid when the response string is not equal to the expected response.
     func testNotEqualsExpectedResponseString() throws {
         try stubHost("www.apple.com", withHTMLFrom: "string-contains-response.html")
@@ -65,7 +77,7 @@ class ResponseStringEqualityValidatorTests: XCTestCase {
         let config = Hyperconnectivity.Configuration(responseValidator: ResponseStringEqualityValidator(expectedResponse: "Success"))
         let connectivity = Hyperconnectivity(configuration: config)
         let connectivityChanged: (ConnectivityResult) -> Void = { result in
-            XCTAssert(result.state == .wifiWithoutInternet)
+            XCTAssert(result.state == .wifiWithoutInternet || result.state == .ethernetWithoutInternet)
             expectation.fulfill()
         }
         connectivity.connectivityChanged = connectivityChanged

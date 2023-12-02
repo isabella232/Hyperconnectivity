@@ -9,6 +9,9 @@
 import Combine
 import Foundation
 import OHHTTPStubs
+#if canImport(OHHTTPStubsSwift)
+import OHHTTPStubsSwift
+#endif
 import XCTest
 @testable import Hyperconnectivity
 
@@ -23,7 +26,16 @@ class ConnectivityPublisherTests: XCTestCase {
     }
     
     private func stubHost(_ host: String, withHTMLFrom fileName: String) throws {
-        let stubPath = try XCTUnwrap(OHPathForFile(fileName, type(of: self)))
+#if SWIFT_PACKAGE
+        let bundle = Bundle.module
+#else
+        let bundle = Bundle(for: type(of: self))
+#endif
+        let fileURL = bundle.url(
+            forResource: (fileName as NSString).deletingPathExtension,
+            withExtension: (fileName as NSString).pathExtension
+        )
+        let stubPath = try XCTUnwrap(fileURL?.relativePath)
         stub(condition: isHost(host)) { _ in
             return fixture(filePath: stubPath, headers: ["Content-Type": "text/html"])
         }
@@ -35,7 +47,7 @@ class ConnectivityPublisherTests: XCTestCase {
         let expectation = XCTestExpectation(description: "Connectivity check succeeds")
         cancellable = Hyperconnectivity.Publisher().sink(receiveCompletion: { _ in
         }, receiveValue: { result in
-            XCTAssertEqual(result.state, .wifiWithInternet)
+            XCTAssert(result.state == .wifiWithInternet || result.state == .ethernetWithInternet)
             expectation.fulfill()
         })
         wait(for: [expectation], timeout: timeout)
@@ -47,8 +59,7 @@ class ConnectivityPublisherTests: XCTestCase {
         let expectation = XCTestExpectation(description: "Connectivity check fails")
         cancellable = Hyperconnectivity.Publisher().sink(receiveCompletion: { _ in
         }, receiveValue: { result in
-            print(result.state.description)
-            XCTAssertEqual(result.state, .wifiWithoutInternet)
+            XCTAssert(result.state == .wifiWithoutInternet || result.state == .ethernetWithoutInternet)
             expectation.fulfill()
         })
         wait(for: [expectation], timeout: timeout)

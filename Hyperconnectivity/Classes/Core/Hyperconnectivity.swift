@@ -34,13 +34,7 @@ public class Hyperconnectivity {
         let configuration = self.configuration
         let pathMonitor = NWPathMonitor()
         pathMonitor.pathUpdateHandler = { [weak self] path in
-            guard let strongSelf = self else {
-                return
-            }
-            strongSelf.handleReachability(for: path)
-            if configuration.shouldCheckConnectivity {
-                strongSelf.checkConnectivity(of: path, using: configuration)
-            }
+            self?.pathUpdated(path, with: configuration)
         }
         self.pathMonitor = pathMonitor
         notifier.post(name: .ConnectivityDidStart, object: nil)
@@ -57,18 +51,15 @@ public class Hyperconnectivity {
 
 private extension Hyperconnectivity {
     private func checkConnectivity(of path: NWPath, using configuration: Configuration) {
-        // Ensure that we never use cached results, including with custom `URLSessionConfiguration`s.
-        let urlSessionConfiguration = configuration.urlSessionConfiguration.copy() as! URLSessionConfiguration
-        urlSessionConfiguration.requestCachePolicy = .reloadIgnoringCacheData
-        urlSessionConfiguration.urlCache = nil
-        
-        let publishers = configuration.connectivityURLs.map { url in
-            URLSession(configuration: urlSessionConfiguration).dataTaskPublisher(for: url)
+        let factory = NonCachingURLSessionConfigurationFactory()
+        let urlSessionConfiguration = factory.urlSessionConfiguration(from: configuration.urlSessionConfiguration)
+        let publishers = configuration.connectivityURLRequests.map { urlRequest in
+            URLSession(configuration: urlSessionConfiguration).dataTaskPublisher(for: urlRequest)
         }
-        let totalChecks = UInt(configuration.connectivityURLs.count)
+        let totalChecks = UInt(configuration.connectivityURLRequests.count)
         let result = ConnectivityResult(path: path, successThreshold: configuration.successThreshold, totalChecks: totalChecks)
         let combinedPublisher = Publishers.MergeMany(publishers)
-        cancellable =  combinedPublisher.sink(receiveCompletion:{ [weak self] _ in
+        cancellable = combinedPublisher.sink(receiveCompletion:{ [weak self] _ in
             self?.connectivityChanged(result)
         }, receiveValue: { [weak self] response in
             result.connectivityCheck(successful: configuration.isResponseValid(response))
@@ -88,5 +79,13 @@ private extension Hyperconnectivity {
     private func handleReachability(for path: NWPath) {
         let result = ReachabilityResult(path: path)
         reachabilityChanged?(result)
+    }
+    
+    /// Invoked on `NWPath` change by `pathUpdateHandler`.
+    private func pathUpdated(_ path: NWPath, with configuration: Configuration) {
+        handleReachability(for: path)
+        if configuration.shouldCheckConnectivity {
+            checkConnectivity(of: path, using: configuration)
+        }
     }
 }
